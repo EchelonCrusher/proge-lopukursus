@@ -1,6 +1,7 @@
 import pygame
 import random
 
+
 class Snake:
     def __init__(self):
         self.length = 10
@@ -25,11 +26,12 @@ class Snake:
         else:
             self.direction = point
 
-    def move(self):
+    def move(self, enemy=0):
         cur = self.get_head_position()
         x, y = self.direction
-        new = (((cur[0]+(x*GRIDSIZE))%SCREEN_WIDTH), (cur[1]+(y*GRIDSIZE))%SCREEN_HEIGHT)
+        new = (((cur[0]+(x*GRID_SIZE)) % SCREEN_WIDTH), (cur[1]+(y*GRID_SIZE)) % SCREEN_HEIGHT)
         if len(self.positions) > 2 and new in self.positions[2:]:
+            enemy.dead = True
             self.reset()
         else:
             self.positions.insert(0, new)
@@ -56,10 +58,10 @@ class Food:
         self.randomize_position()
 
     def randomize_position(self):
-        self.position = (random.randint(0, GRID_WIDTH-1)*GRIDSIZE, random.randint(0, GRID_HEIGHT-1)*GRIDSIZE)
+        self.position = (random.randint(0, GRID_WIDTH-1)*GRID_SIZE, random.randint(0, GRID_HEIGHT-1)*GRID_SIZE)
 
     def draw(self, surface):
-        pygame.draw.rect(surface, self.color, (self.position[0], self.position[1], GRIDSIZE, GRIDSIZE))
+        pygame.draw.rect(surface, self.color, (self.position[0], self.position[1], GRID_SIZE, GRID_SIZE))
 
 
 class Enemy:
@@ -71,10 +73,10 @@ class Enemy:
         self.dead = True
 
     def randomize_position(self):
-        self.position = (random.randint(0, GRID_WIDTH-1)*GRIDSIZE, random.randint(0, GRID_HEIGHT-1)*GRIDSIZE)
+        self.position = (random.randint(0, GRID_WIDTH-1)*GRID_SIZE, random.randint(0, GRID_HEIGHT-1)*GRID_SIZE)
 
     def draw(self, surface):
-        pygame.draw.rect(surface, self.color, (self.position[0], self.position[1], GRIDSIZE, GRIDSIZE))
+        pygame.draw.rect(surface, self.color, (self.position[0], self.position[1], GRID_SIZE, GRID_SIZE))
 
     def move(self, snake):
         self.dead = False
@@ -93,7 +95,7 @@ class Enemy:
 
         cur = self.position
         x, y = self.direction
-        new = (((cur[0] + (x * GRIDSIZE)) % SCREEN_WIDTH), (cur[1] + (y * GRIDSIZE)) % SCREEN_HEIGHT)
+        new = (((cur[0] + (x * GRID_SIZE)) % SCREEN_WIDTH), (cur[1] + (y * GRID_SIZE)) % SCREEN_HEIGHT)
         self.position = new
 
     def collision(self, snake):
@@ -108,22 +110,23 @@ class Enemy:
             snake.length = index
 
 
-def drawGrid(surface):
+def draw_grid(surface):
     for y in range(0, int(GRID_HEIGHT)):
         for x in range(0, int(GRID_WIDTH)):
             if (x+y)%2 == 0:
-                r = pygame.Rect((x*GRIDSIZE, y*GRIDSIZE, GRIDSIZE, GRIDSIZE))
+                r = pygame.Rect((x*GRID_SIZE, y*GRID_SIZE, GRID_SIZE, GRID_SIZE))
                 pygame.draw.rect(surface, (93, 216, 228), r)
             else:
-                rr = pygame.Rect((x*GRIDSIZE, y*GRIDSIZE, GRIDSIZE, GRIDSIZE))
+                rr = pygame.Rect((x*GRID_SIZE, y*GRID_SIZE, GRID_SIZE, GRID_SIZE))
                 pygame.draw.rect(surface, (84, 194, 205), rr)
+
 
 SCREEN_WIDTH = 920
 SCREEN_HEIGHT = 920
 
-GRIDSIZE = 20
-GRID_WIDTH = SCREEN_WIDTH // GRIDSIZE
-GRID_HEIGHT = SCREEN_HEIGHT // GRIDSIZE
+GRID_SIZE = 20
+GRID_WIDTH = SCREEN_WIDTH // GRID_SIZE
+GRID_HEIGHT = SCREEN_HEIGHT // GRID_SIZE
 
 UP = (0, -1)
 DOWN = (0, 1)
@@ -159,7 +162,7 @@ def main():
                     snake.turn(RIGHT)
         if not enemy.dead and random.random() < 0.5:
             enemy.move(snake)
-        snake.move()
+        snake.move(enemy)
 
         if snake.get_head_position() == food.position:
             snake.length += 1
@@ -169,7 +172,7 @@ def main():
                 enemy.dead = False
         enemy.collision(snake)
 
-        drawGrid(surface)
+        draw_grid(surface)
         snake.draw(surface)
         if not enemy.dead:
             enemy.draw(surface)
