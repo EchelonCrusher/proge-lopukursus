@@ -1,7 +1,6 @@
 import pygame
 import random
 
-
 SCREEN_WIDTH = 920
 SCREEN_HEIGHT = 920
 
@@ -80,6 +79,56 @@ class Food:
         pygame.draw.rect(surface, self.color, (self.position[0], self.position[1], GRID_SIZE, GRID_SIZE))
 
 
+def spawn(count=1):
+    fireballs = []
+    for i in range(count):
+        fireball = Fireball()
+        fireballs.append(fireball)
+    return fireballs
+
+
+class Fireball:
+    def __init__(self):
+        self.position = (0, 0)
+        self.color = (242, 195, 65)
+        self.direction = random.choice([UP, DOWN, LEFT, RIGHT])
+        self.randomize_position()
+        self.tick = 0
+
+    def randomize_position(self):
+        x, y = self.direction
+        if x == 0:
+            y_coord = (GRID_HEIGHT - 1) * (y == -1) # (0, 1) is down, (0, -1) is up
+            self.position = (random.randint(0, GRID_WIDTH - 1) * GRID_SIZE, y_coord * GRID_SIZE)
+        else:
+            x_coord = (GRID_WIDTH - 1) * (x == -1) # (1, 0) is right, (-1, 0) is left
+            self.position = (x_coord * GRID_SIZE, random.randint(0, GRID_HEIGHT - 1) * GRID_SIZE)
+
+    def draw(self, surface):
+        pygame.draw.rect(surface, self.color, (self.position[0], self.position[1], GRID_SIZE, GRID_SIZE))
+
+    def move(self, snake):
+        if self.collision(snake):
+            return True
+        if self.tick < 3:  # Movement every 3 ticks
+            self.tick += 1
+            return
+        self.tick = 0
+        cur = self.position
+        x, y = self.direction
+        self.position = (((cur[0] + (x * GRID_SIZE)) % SCREEN_WIDTH), (cur[1] + (y * GRID_SIZE)) % SCREEN_HEIGHT)
+        self.collision(snake)
+
+    def collision(self, snake):
+        if snake.get_head_position() == self.position:
+            snake.reset()
+            return True
+        elif self.position in snake.positions:
+            index = snake.positions.index(self.position)
+            snake.positions = snake.positions[:index]
+            snake.length = index
+
+
 class Enemy:
     def __init__(self):
         self.position = (0, 0)
@@ -105,13 +154,15 @@ class Enemy:
                 self.direction = RIGHT if dx > 0 else LEFT
             else:
                 self.direction = DOWN if dy > 0 else UP
-
-        else:  # 50% chance to move randomly
+        else:  # 20% chance to move randomly
             self.direction = random.choice([UP, DOWN, LEFT, RIGHT])
 
         cur = self.position
         x, y = self.direction
         new = (((cur[0] + (x * GRID_SIZE)) % SCREEN_WIDTH), (cur[1] + (y * GRID_SIZE)) % SCREEN_HEIGHT)
+        self.collision(snake)
+        # if new == snake.get_head_position:  # Check for collision
+        #     return
         self.position = new
 
     def collision(self, snake):
@@ -127,14 +178,29 @@ class Enemy:
 
 
 def draw_grid(surface):
+    center_x = GRID_WIDTH // 2
+    center_y = GRID_HEIGHT // 2
     for y in range(0, int(GRID_HEIGHT)):
         for x in range(0, int(GRID_WIDTH)):
-            if (x+y) % 2 == 0:
-                r = pygame.Rect((x*GRID_SIZE, y*GRID_SIZE, GRID_SIZE, GRID_SIZE))
-                pygame.draw.rect(surface, (93, 216, 228), r)
+            distance_x = abs(x - center_x)
+            distance_y = abs(y - center_y)
+            distance = (distance_x ** 2 + distance_y ** 2) ** 0.5
+
+            # Calculate color components based on distance
+            red = 93  # + distance * 8  # Increase red content by 5 per grid size away from the center
+            blue = 228  # - distance * 8  # Decrease blue content by 5 per grid size away from the center
+
+            # Ensure color components stay within range [0, 255]
+            red = max(0, min(red, 255))
+            blue = max(0, min(blue, 255))
+
+            # Draw rectangles with modified colors
+            if (x + y) % 2 == 0:
+                color = (red, 216, blue)
             else:
-                rr = pygame.Rect((x*GRID_SIZE, y*GRID_SIZE, GRID_SIZE, GRID_SIZE))
-                pygame.draw.rect(surface, (84, 194, 205), rr)
+                color = (red - 9, 194, blue + 11)  # Adjusting green component to maintain contrast
+            r = pygame.Rect((x * GRID_SIZE, y * GRID_SIZE, GRID_SIZE, GRID_SIZE))
+            pygame.draw.rect(surface, color, r)
 
 
 def main():
@@ -148,12 +214,14 @@ def main():
     snake = Snake()
     food = Food()
     enemy = Enemy()
+    fireballs = []
+    fireballs += spawn(6)
 
     while True:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
-            elif event.type == pygame.KEYDOWN and not movement_activated:  # Check if movement has not been activated yet
+            elif event.type == pygame.KEYDOWN and not movement_disabled:  # Check if movement is allowed
                 if event.key == pygame.K_UP:
                     snake.turn(UP)
                 elif event.key == pygame.K_DOWN:
@@ -162,13 +230,13 @@ def main():
                     snake.turn(LEFT)
                 elif event.key == pygame.K_RIGHT:
                     snake.turn(RIGHT)
-                movement_activated = True  # Set movement_activated to True after movement is activated
+                movement_disabled = True  # Disable movement
 
+        snake.move(enemy)
         if not enemy.dead and random.random() < 0.4:
             enemy.move(snake)
-        snake.move(enemy)
-        # Reset movement_activated at the start of each tick
-        movement_activated = False
+        # Enable movement
+        movement_disabled = False
 
         if snake.get_head_position() == food.position:
             snake.length += 1
@@ -177,9 +245,13 @@ def main():
             if snake.length >= 5:
                 enemy.dead = False
         enemy.collision(snake)
-
+        for fireball in fireballs:
+            if fireball.move(snake):  # If collision is True
+                fireballs.remove(fireball)
         draw_grid(surface)
         snake.draw(surface)
+        for fireball in fireballs:
+            fireball.draw(surface)
         if not enemy.dead:
             enemy.draw(surface)
         food.draw(surface)
