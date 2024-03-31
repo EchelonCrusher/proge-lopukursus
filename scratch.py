@@ -13,7 +13,6 @@ DOWN = (0, 1)
 LEFT = (-1, 0)
 RIGHT = (1, 0)
 
-
 class Snake:
     def __init__(self):
         self.length = 10
@@ -202,11 +201,37 @@ def draw_grid(surface):
             r = pygame.Rect((x * GRID_SIZE, y * GRID_SIZE, GRID_SIZE, GRID_SIZE))
             pygame.draw.rect(surface, color, r)
 
+# Siit algab mu level/xp/shop süsteemi värk
+
+shop_items = ["XP Booster", "Wormhole", "Healing", "Armor", "Extra Apple", "Time Freeze"]
+short_powerup_timer = 15
+long_powerup_timer = 30
+
+xp = 0
+lvl = 1
+xp_for_next_lvl = 30  # The amount of XP needed for the next level
+xp_curve_start_lvl = 5  # The level at which the XP requirement for every new level starts rising
+
+def level_up():
+    if xp == xp_for_next_lvl:
+        lvl += 1
+        xp = 0
+        if lvl >= xp_curve_start_lvl:
+            xp_for_next_lvl += 5
 
 def main():
     pygame.init()
+    pygame.font.init()
     clock = pygame.time.Clock()
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), 0, 32)
+
+    # lisasin siia xp counteri osa
+    font_size = 32
+    font = pygame.font.Font(None, font_size)
+
+    xpcounter_x = 20
+    xpcounter_y = 20
+    # ----------
 
     surface = pygame.Surface(screen.get_size())
     surface = surface.convert()
@@ -259,6 +284,19 @@ def main():
         pygame.display.update()
         clock.tick(10)
 
+        # Panin siia alla main loopi oma koodi, sest teisest failist seda counterit kuvada oli päris õudne...
+
+        # Render the text
+        text = font.render(str(xp), True, (0, 255, 0), (0, 0, 0))
+
+        # Seda recti on vist ainult ühe korra vaja teha
+        textRect = text.get_rect() # Get the rect of the text
+        textRect.topleft = (xpcounter_x, xpcounter_y) # Position the text
+
+        # To do: uuenda counteri display'd ainult juhul, kui xp arv muutub, muidu hakkab flickerima
+        surface.blit(text, textRect) # Blit the text onto the existing game surface
+        screen.blit(surface, (0, 0)) # Blit the game surface onto the screen
+        pygame.display.update() # Update the display
 
 if __name__ == "__main__":
     main()
