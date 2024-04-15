@@ -13,6 +13,9 @@ DOWN = (0, 1)
 LEFT = (-1, 0)
 RIGHT = (1, 0)
 
+SHOP_ITEMS = ["XP Booster", "Wormhole", "Healing", "Armor", "Extra Apple", "Time Freeze"]
+SHORT_POWERUP_TIMER = 15
+LONG_POWERUP_TIMER = 30
 
 class Snake:
     def __init__(self):
@@ -23,6 +26,17 @@ class Snake:
         self.color = (0, 255, 0)
         self.head_sprite = pygame.image.load('./kivi2.png')
         self.body_sprite = pygame.image.load('./pudel2.png')
+        self.xp = 0
+        self.lvl = 1
+        self.xp_for_next_lvl = 30
+        self.xp_curve_start_lvl = 5
+
+    def level_up(self):
+        if self.xp == self.xp_for_next_lvl:
+            self.lvl += 1
+            self.xp = 0
+            if self.lvl >= self.xp_curve_start_lvl:
+                self.xp_for_next_lvl += 5
 
     def get_head_position(self):
         return self.positions[0]
@@ -171,6 +185,7 @@ class Enemy:
         if snake.get_head_position() == self.position:
             self.randomize_position()
             self.dead = True
+            snake.xp += 10
         elif self.position in snake.positions:
             index = snake.positions.index(self.position)
             snake.positions = snake.positions[:index]
@@ -202,11 +217,17 @@ def draw_grid(surface):
             r = pygame.Rect((x * GRID_SIZE, y * GRID_SIZE, GRID_SIZE, GRID_SIZE))
             pygame.draw.rect(surface, color, r)
 
-
 def main():
     pygame.init()
+    pygame.font.init()
     clock = pygame.time.Clock()
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), 0, 32)
+
+    # XP counter
+    font_size = 32
+    font = pygame.font.Font(None, font_size)
+    xpcounter_x = 20
+    xpcounter_y = 20
 
     surface = pygame.Surface(screen.get_size())
     surface = surface.convert()
@@ -241,6 +262,7 @@ def main():
         if snake.get_head_position() == food.position:
             snake.length += 1
             snake.move()
+            snake.xp += 5
             food.randomize_position()
             if snake.length >= 5:
                 enemy.dead = False
@@ -248,6 +270,7 @@ def main():
         for fireball in fireballs:
             if fireball.move(snake):  # If collision is True
                 fireballs.remove(fireball)
+                snake.xp = 0
         draw_grid(surface)
         snake.draw(surface)
         for fireball in fireballs:
@@ -256,8 +279,18 @@ def main():
             enemy.draw(surface)
         food.draw(surface)
         screen.blit(surface, (0, 0))
-        pygame.display.update()
         clock.tick(10)
+
+        # Render the text
+        text = font.render(str(snake.xp), True, (0, 255, 0), (0, 0, 0))
+
+        # Seda recti on vist ainult ühe korra vaja teha
+        textRect = text.get_rect() # Get the rect of the text
+        textRect.topleft = (xpcounter_x, xpcounter_y) # Position the text
+
+        surface.blit(text, textRect) # Blit the text onto the existing game surface
+        screen.blit(surface, (0, 0)) # Blit the game surface onto the screen
+        pygame.display.update() # Update the display
 
 
 if __name__ == "__main__":
