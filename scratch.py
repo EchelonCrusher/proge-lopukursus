@@ -13,30 +13,34 @@ DOWN = (0, 1)
 LEFT = (-1, 0)
 RIGHT = (1, 0)
 
-SHOP_ITEMS = ["XP Booster", "Wormhole", "Healing", "Armor", "Extra Apple", "Time Freeze"]
-SHORT_POWERUP_TIMER = 15
-LONG_POWERUP_TIMER = 30
+font_size = 32
+text_x = 20
+text_y = 20
+text_color = (255, 255, 255)  # Text color
+outline_color = (0, 0, 0)  # Outline color
+outline_width = 1.5  # Outline width
+
+global SNAKE
+global ENEMY
+
+shop_items = ["XP Booster", "Wormhole", "Healing", "Armor", "Extra Apple", "Time Freeze"]
+short_powerup_timer = 15
+long_powerup_timer = 30
+
 
 class Snake:
     def __init__(self):
         self.length = 10
         self.positions = [((SCREEN_WIDTH // 2), (SCREEN_HEIGHT // 2))]
         self.direction = random.choice([UP, DOWN, LEFT, RIGHT])
-        self.last_direction = self.direction
         self.color = (0, 255, 0)
-        self.head_sprite = pygame.image.load('./kivi2.png')
-        self.body_sprite = pygame.image.load('./pudel2.png')
+        self.head_sprite = pygame.transform.scale(pygame.image.load('./head.png'), (20, 20))
+        self.body_sprite = pygame.transform.scale(pygame.image.load('./body.png'), (20, 20))
+        self.end_sprite = pygame.transform.scale(pygame.image.load('./end.png'), (20, 20))
         self.xp = 0
-        self.lvl = 1
-        self.xp_for_next_lvl = 30
-        self.xp_curve_start_lvl = 5
-
-    def level_up(self):
-        if self.xp == self.xp_for_next_lvl:
-            self.lvl += 1
-            self.xp = 0
-            if self.lvl >= self.xp_curve_start_lvl:
-                self.xp_for_next_lvl += 5
+        self.level = 0
+        self.needed_xp = 5
+        self.level_up_sound = pygame.mixer.Sound('level_up.mp3')
 
     def get_head_position(self):
         return self.positions[0]
@@ -47,37 +51,69 @@ class Snake:
         except IndexError:
             return self.positions[0]
 
-    def turn(self, point):
-        if self.length > 1 and (point[0]*-1, point[1]*-1) == self.direction: #  or (point[0]*-1, point[1]*-1) == self.last_direction:
+    def turn(self, direction):
+        if self.length > 1 and (direction[0] * -1, direction[1] * -1) == self.direction:
             return
         else:
-            print(point, self.last_direction, self.direction)
-            self.last_direction = tuple(self.direction)
-            self.direction = point
+            self.direction = direction
 
-    def move(self, enemy=None):
-        cur = self.get_head_position()
+    def move(self):
+        pos = self.get_head_position()
         x, y = self.direction
-        new = (((cur[0]+(x*GRID_SIZE)) % SCREEN_WIDTH), (cur[1]+(y*GRID_SIZE)) % SCREEN_HEIGHT)
-        if len(self.positions) > 2 and new in self.positions[2:]:
-            enemy.dead = True
+        # Moves the player one grid forward, wrapping to the opposite side of the screen if it reaches the edge
+        new_pos = (((pos[0]+(x*GRID_SIZE)) % SCREEN_WIDTH), (pos[1]+(y*GRID_SIZE)) % SCREEN_HEIGHT)
+        if len(self.positions) > 2 and new_pos in self.positions[2:]:  # Player runs into themselves
             self.reset()
         else:
-            self.positions.insert(0, new)
-            if len(self.positions) > self.length:
+            self.positions.insert(0, new_pos)
+            if len(self.positions) > self.length:  # Removes positions exceeding max length
                 self.positions.pop()
 
     def reset(self):
         self.length = 10
         self.positions = [((SCREEN_WIDTH // 2), (SCREEN_HEIGHT // 2))]
         self.direction = random.choice([UP, DOWN, LEFT, RIGHT])
+        self.xp = 0
+        self.level = 0
+        self.needed_xp = 5
+        # Remove boss state, reset fireballs
 
     def draw(self, surface):
         for index, p in enumerate(self.positions):
-            if index == 0:  # head of the snake
-                surface.blit(self.head_sprite, (p[0], p[1]))
+            if index == 0:  # Head piece
+                self.edge_pieces(p, surface, self.head_sprite, self.direction)
+            elif index == len(self.positions) - 1:  # End piece
+                direction_between = ((self.positions[-2][0] - p[0]) / 20, (self.positions[-2][1] - p[1]) / 20)
+                self.edge_pieces(p, surface, self.end_sprite, direction_between)
             else:  # body of the snake
                 surface.blit(self.body_sprite, (p[0], p[1]))
+
+    def edge_pieces(self, p, surface, sprite, direction):  # head.png and end.png rotation
+        rotated_head_sprite = pygame.transform.rotate(sprite, self.angle(direction))
+        # Get the position to blit the sprite
+        head_rect = rotated_head_sprite.get_rect(center=(p[0] + GRID_SIZE / 2, p[1] + GRID_SIZE / 2))
+        surface.blit(rotated_head_sprite, head_rect)
+
+    def angle(self, direction):  # Calculate rotation angle based on direction
+        if direction == UP:
+            return 180
+        elif direction == DOWN:
+            return 0
+        elif direction == LEFT:
+            return -90
+        elif direction == RIGHT:
+            return 90
+        else:
+            return self.angle(self.direction)
+
+    def experience(self, amount: int):
+        self.xp += amount
+        if self.xp >= self.needed_xp:
+            self.level_up_sound.play()
+            self.level += 1
+            self.xp -= self.needed_xp
+            self.needed_xp += 2
+            self.experience(0)
 
 
 class Food:
@@ -85,20 +121,25 @@ class Food:
         self.position = (0, 0)
         self.color = (255, 0, 0)
         self.randomize_position()
+        self.sprite = pygame.transform.scale(pygame.image.load('./apple.png'), (20, 20))
 
     def randomize_position(self):
         self.position = (random.randint(0, GRID_WIDTH-1)*GRID_SIZE, random.randint(0, GRID_HEIGHT-1)*GRID_SIZE)
 
     def draw(self, surface):
-        pygame.draw.rect(surface, self.color, (self.position[0], self.position[1], GRID_SIZE, GRID_SIZE))
+        surface.blit(self.sprite, (self.position[0], self.position[1]))
 
 
-def spawn(count=1):
-    fireballs = []
+def spawn(class_name: str, count=1):
+    objs = []
     for i in range(count):
-        fireball = Fireball()
-        fireballs.append(fireball)
-    return fireballs
+        if class_name == "Fireball":
+            obj = Fireball()
+            objs.append(obj)
+        elif class_name == "Enemy":
+            obj = Enemy()
+            objs.append(obj)
+    return objs
 
 
 class Fireball:
@@ -108,39 +149,43 @@ class Fireball:
         self.direction = random.choice([UP, DOWN, LEFT, RIGHT])
         self.randomize_position()
         self.tick = 0
+        self.kill = False
+        global SNAKE
 
     def randomize_position(self):
         x, y = self.direction
         if x == 0:
-            y_coord = (GRID_HEIGHT - 1) * (y == -1) # (0, 1) is down, (0, -1) is up
+            y_coord = (GRID_HEIGHT - 1) * (y == -1)  # down and up
             self.position = (random.randint(0, GRID_WIDTH - 1) * GRID_SIZE, y_coord * GRID_SIZE)
         else:
-            x_coord = (GRID_WIDTH - 1) * (x == -1) # (1, 0) is right, (-1, 0) is left
+            x_coord = (GRID_WIDTH - 1) * (x == -1)  # right and left
             self.position = (x_coord * GRID_SIZE, random.randint(0, GRID_HEIGHT - 1) * GRID_SIZE)
 
     def draw(self, surface):
         pygame.draw.rect(surface, self.color, (self.position[0], self.position[1], GRID_SIZE, GRID_SIZE))
 
-    def move(self, snake):
-        if self.collision(snake):
-            return True
+    def move(self):
+        self.collision()
         if self.tick < 3:  # Movement every 3 ticks
             self.tick += 1
             return
         self.tick = 0
-        cur = self.position
+        pos = self.position
         x, y = self.direction
-        self.position = (((cur[0] + (x * GRID_SIZE)) % SCREEN_WIDTH), (cur[1] + (y * GRID_SIZE)) % SCREEN_HEIGHT)
-        self.collision(snake)
+        if pos[0] > SCREEN_WIDTH or pos[0] < 0 or pos[1] > SCREEN_WIDTH or pos[1] < 0:
+            self.kill = True
+        self.position = ((pos[0] + (x * GRID_SIZE)), (pos[1] + (y * GRID_SIZE)))
+        self.collision()
 
-    def collision(self, snake):
-        if snake.get_head_position() == self.position:
-            snake.reset()
+    def collision(self):
+        if SNAKE.get_head_position() == self.position:
+            SNAKE.reset()
             return True
-        elif self.position in snake.positions:
-            index = snake.positions.index(self.position)
-            snake.positions = snake.positions[:index]
-            snake.length = index
+        elif self.position in SNAKE.positions:
+            index = SNAKE.positions.index(self.position)
+            SNAKE.positions = SNAKE.positions[:index]
+            SNAKE.length = index
+            self.kill = True
 
 
 class Enemy:
@@ -150,6 +195,8 @@ class Enemy:
         self.randomize_position()
         self.direction = random.choice([UP, DOWN, LEFT, RIGHT])
         self.dead = True
+        self.nom_sound = pygame.mixer.Sound('nom.mp3')
+        global SNAKE
 
     def randomize_position(self):
         self.position = (random.randint(0, GRID_WIDTH-1)*GRID_SIZE, random.randint(0, GRID_HEIGHT-1)*GRID_SIZE)
@@ -157,10 +204,10 @@ class Enemy:
     def draw(self, surface):
         pygame.draw.rect(surface, self.color, (self.position[0], self.position[1], GRID_SIZE, GRID_SIZE))
 
-    def move(self, snake):
+    def move(self):
         self.dead = False
         if random.random() < 0.8:  # 80% chance to move towards snake's middle position
-            snake_middle = snake.get_middle_position()
+            snake_middle = SNAKE.get_middle_position()
             dx = snake_middle[0] - self.position[0]
             dy = snake_middle[1] - self.position[1]
 
@@ -171,126 +218,196 @@ class Enemy:
         else:  # 20% chance to move randomly
             self.direction = random.choice([UP, DOWN, LEFT, RIGHT])
 
-        cur = self.position
+        pos = self.position
         x, y = self.direction
-        new = (((cur[0] + (x * GRID_SIZE)) % SCREEN_WIDTH), (cur[1] + (y * GRID_SIZE)) % SCREEN_HEIGHT)
-        self.collision(snake)
-        # if new == snake.get_head_position:  # Check for collision
-        #     return
-        self.position = new
+        new_pos = (((pos[0] + (x * GRID_SIZE)) % SCREEN_WIDTH), (pos[1] + (y * GRID_SIZE)) % SCREEN_HEIGHT)
+        self.collision()
+        self.position = new_pos
 
-    def collision(self, snake):
+    def collision(self):
         if self.dead:
             return
-        if snake.get_head_position() == self.position:
+        if SNAKE.get_head_position() == self.position:
             self.randomize_position()
+            SNAKE.experience(3)
+            self.nom_sound.play()
             self.dead = True
-            snake.xp += 10
-        elif self.position in snake.positions:
-            index = snake.positions.index(self.position)
-            snake.positions = snake.positions[:index]
-            snake.length = index
+        elif self.position in SNAKE.positions:
+            index = SNAKE.positions.index(self.position)
+            SNAKE.positions = SNAKE.positions[:index]
+            SNAKE.length = index
+
+
+class Lever:
+    def __init__(self):
+        self.position = (0, 0)
+        self.color = (255, 255, 255)
+        self.randomize_position()
+        self.flicks = 0
+        global SNAKE
+
+    def randomize_position(self):
+        self.position = (random.randint(0, GRID_WIDTH-1)*GRID_SIZE, random.randint(0, GRID_HEIGHT-1)*GRID_SIZE)
+
+    def collision(self):
+        if SNAKE.get_head_position() == self.position:
+            self.flicks += 1
+            if self.flicks < 5:
+                self.randomize_position()
+
+    def draw(self, surface):
+        pygame.draw.rect(surface, self.color, (self.position[0], self.position[1], GRID_SIZE, GRID_SIZE))
 
 
 def draw_grid(surface):
-    center_x = GRID_WIDTH // 2
-    center_y = GRID_HEIGHT // 2
+    colors = [[93, 216, 228], [92, 194, 228]]
     for y in range(0, int(GRID_HEIGHT)):
         for x in range(0, int(GRID_WIDTH)):
-            distance_x = abs(x - center_x)
-            distance_y = abs(y - center_y)
-            distance = (distance_x ** 2 + distance_y ** 2) ** 0.5
-
-            # Calculate color components based on distance
-            red = 93  # + distance * 8  # Increase red content by 5 per grid size away from the center
-            blue = 228  # - distance * 8  # Decrease blue content by 5 per grid size away from the center
-
-            # Ensure color components stay within range [0, 255]
-            red = max(0, min(red, 255))
-            blue = max(0, min(blue, 255))
-
             # Draw rectangles with modified colors
             if (x + y) % 2 == 0:
-                color = (red, 216, blue)
+                color = colors[0]
             else:
-                color = (red - 9, 194, blue + 11)  # Adjusting green component to maintain contrast
-            r = pygame.Rect((x * GRID_SIZE, y * GRID_SIZE, GRID_SIZE, GRID_SIZE))
-            pygame.draw.rect(surface, color, r)
+                color = colors[1]
+            rectangle = pygame.Rect((x * GRID_SIZE, y * GRID_SIZE, GRID_SIZE, GRID_SIZE))
+            pygame.draw.rect(surface, color, rectangle)
+
 
 def main():
     pygame.init()
     pygame.font.init()
+    pygame.mixer.init()
     clock = pygame.time.Clock()
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), 0, 32)
 
-    # XP counter
-    font_size = 32
-    font = pygame.font.Font(None, font_size)
-    xpcounter_x = 20
-    xpcounter_y = 20
-
     surface = pygame.Surface(screen.get_size())
     surface = surface.convert()
-
-    snake = Snake()
+    global SNAKE
+    SNAKE = Snake()
     food = Food()
-    enemy = Enemy()
+    global ENEMY
+    ENEMY = Enemy()
     fireballs = []
-    fireballs += spawn(6)
+    boss_levels = [0]
+    boss_active = False
+    boss_cooldown = 0
+    fireball_cooldown = 15
+
+    font = pygame.font.Font(None, font_size)
+    boss_start = pygame.mixer.Sound('RageActivate.wav')
+    boss_end = pygame.mixer.Sound('RageEnd.wav')
+    boss_end.set_volume(0.5), boss_start.set_volume(0.5)
+    nom_sound = pygame.mixer.Sound('nom.mp3')
+
+    tick_rate = 10
 
     while True:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
-            elif event.type == pygame.KEYDOWN and not movement_disabled:  # Check if movement is allowed
+            elif event.type == pygame.KEYDOWN and not movement_disabled:
                 if event.key == pygame.K_UP:
-                    snake.turn(UP)
+                    SNAKE.turn(UP)
                 elif event.key == pygame.K_DOWN:
-                    snake.turn(DOWN)
+                    SNAKE.turn(DOWN)
                 elif event.key == pygame.K_LEFT:
-                    snake.turn(LEFT)
+                    SNAKE.turn(LEFT)
                 elif event.key == pygame.K_RIGHT:
-                    snake.turn(RIGHT)
+                    SNAKE.turn(RIGHT)
                 movement_disabled = True  # Disable movement
 
-        snake.move(enemy)
-        if not enemy.dead and random.random() < 0.4:
-            enemy.move(snake)
+        SNAKE.move()
+        if not ENEMY.dead and random.random() < 0.4:
+            ENEMY.move()
         # Enable movement
         movement_disabled = False
 
-        if snake.get_head_position() == food.position:
-            snake.length += 1
-            snake.move()
-            snake.xp += 5
+        if SNAKE.get_head_position() == food.position:
+            SNAKE.length += 1
+            SNAKE.move()
             food.randomize_position()
-            if snake.length >= 5:
-                enemy.dead = False
-        enemy.collision(snake)
+            SNAKE.experience(1)
+            nom_sound.play()
+
+            if SNAKE.length >= 5:
+                ENEMY.dead = False
+        ENEMY.collision()
+
         for fireball in fireballs:
-            if fireball.move(snake):  # If collision is True
+            fireball.move()
+            if fireball.kill:
                 fireballs.remove(fireball)
-                snake.xp = 0
+
+        if SNAKE.level == 0 and SNAKE.xp == 0:  # Reset board upon death
+            fireballs = []
+            boss_levels = [0]
+            tick_rate = 10
+            ENEMY.dead = True
+            if boss_active:
+                boss_end.play()
+                boss_active = False
+                while pygame.mixer.get_busy():
+                    pygame.time.wait(30)
+
         draw_grid(surface)
-        snake.draw(surface)
+
+        if boss_active:
+            lever.collision()
+            fireball_cooldown -= 1
+            if fireball_cooldown <= 0:
+                fireball_cooldown = 15
+                fireballs += spawn("Fireball", 1)
+
+            if lever.flicks >= 1:
+                boss_end.play()
+                tick_rate = 10
+                boss_active = False
+                SNAKE.experience(max((2 * (SNAKE.length - 2)), 2))
+            else:
+                lever.draw(surface)
+
+        elif boss_cooldown > 0:
+            boss_cooldown -= 1
+
+        SNAKE.draw(surface)
         for fireball in fireballs:
             fireball.draw(surface)
-        if not enemy.dead:
-            enemy.draw(surface)
+        if not ENEMY.dead:
+            ENEMY.draw(surface)
         food.draw(surface)
         screen.blit(surface, (0, 0))
-        clock.tick(10)
+        display_ui(font, screen)
 
-        # Render the text
-        text = font.render(str(snake.xp), True, (0, 255, 0), (0, 0, 0))
+        # Activate boss battle
+        if SNAKE.level % 3 == 0 and SNAKE.level not in boss_levels:
+            boss_levels.append(SNAKE.level)
+            if boss_cooldown <= 0:
+                boss_cooldown = 100
+                boss_start.play()
+                tick_rate = 15
+                fireballs += spawn("Fireball", 10)
+                if not boss_active:
+                    lever = Lever()
+                    boss_active = True
 
-        # Seda recti on vist ainult ühe korra vaja teha
-        textRect = text.get_rect() # Get the rect of the text
-        textRect.topleft = (xpcounter_x, xpcounter_y) # Position the text
+        clock.tick(tick_rate)
 
-        surface.blit(text, textRect) # Blit the text onto the existing game surface
-        screen.blit(surface, (0, 0)) # Blit the game surface onto the screen
-        pygame.display.update() # Update the display
+
+def display_ui(font, screen):
+    # XP and Level counter display
+    xp_text = font.render(f"{SNAKE.xp} / {SNAKE.needed_xp}", True, text_color)
+    xp_outline_text = font.render(f"{SNAKE.xp} / {SNAKE.needed_xp}", True, outline_color)
+
+    level_text = font.render(f"Level: {SNAKE.level}", True, text_color)
+    level_outline_text = font.render(f"Level: {SNAKE.level}", True, outline_color)
+
+    # Blit outline text with offsets to create the outline effect
+    for dx, dy in [(0, -outline_width), (0, outline_width), (-outline_width, 0), (outline_width, 0)]:
+        screen.blit(xp_outline_text, (text_x + dx, text_y + dy))
+        screen.blit(level_outline_text, (text_x + dx, text_y + xp_text.get_height() + 5 + dy))
+
+    screen.blit(xp_text, (text_x, text_y))
+    screen.blit(level_text, (text_x, text_y + xp_text.get_height() + 5))
+    pygame.display.update()
 
 
 if __name__ == "__main__":
