@@ -40,7 +40,7 @@ class Snake:
         self.xp = 0
         self.level = 0
         self.needed_xp = 5
-        global ENEMY
+        self.level_up_sound = pygame.mixer.Sound('level_up.mp3')
 
     def get_head_position(self):
         return self.positions[0]
@@ -63,7 +63,6 @@ class Snake:
         # Moves the player one grid forward, wrapping to the opposite side of the screen if it reaches the edge
         new_pos = (((pos[0]+(x*GRID_SIZE)) % SCREEN_WIDTH), (pos[1]+(y*GRID_SIZE)) % SCREEN_HEIGHT)
         if len(self.positions) > 2 and new_pos in self.positions[2:]:  # Player runs into themselves
-            ENEMY.dead = True
             self.reset()
         else:
             self.positions.insert(0, new_pos)
@@ -77,6 +76,7 @@ class Snake:
         self.xp = 0
         self.level = 0
         self.needed_xp = 5
+        # Remove boss state, reset fireballs
 
     def draw(self, surface):
         for index, p in enumerate(self.positions):
@@ -109,9 +109,11 @@ class Snake:
     def experience(self, amount: int):
         self.xp += amount
         if self.xp >= self.needed_xp:
+            self.level_up_sound.play()
             self.level += 1
             self.xp -= self.needed_xp
             self.needed_xp += 2
+            self.experience(0)
 
 
 class Food:
@@ -119,20 +121,25 @@ class Food:
         self.position = (0, 0)
         self.color = (255, 0, 0)
         self.randomize_position()
+        self.sprite = pygame.transform.scale(pygame.image.load('./apple.png'), (20, 20))
 
     def randomize_position(self):
         self.position = (random.randint(0, GRID_WIDTH-1)*GRID_SIZE, random.randint(0, GRID_HEIGHT-1)*GRID_SIZE)
 
     def draw(self, surface):
-        pygame.draw.rect(surface, self.color, (self.position[0], self.position[1], GRID_SIZE, GRID_SIZE))
+        surface.blit(self.sprite, (self.position[0], self.position[1]))
 
 
-def spawn(count=1):
-    fireballs = []
+def spawn(class_name: str, count=1):
+    objs = []
     for i in range(count):
-        fireball = Fireball()
-        fireballs.append(fireball)
-    return fireballs
+        if class_name == "Fireball":
+            obj = Fireball()
+            objs.append(obj)
+        elif class_name == "Enemy":
+            obj = Enemy()
+            objs.append(obj)
+    return objs
 
 
 class Fireball:
@@ -142,6 +149,7 @@ class Fireball:
         self.direction = random.choice([UP, DOWN, LEFT, RIGHT])
         self.randomize_position()
         self.tick = 0
+        self.kill = False
         global SNAKE
 
     def randomize_position(self):
@@ -157,27 +165,27 @@ class Fireball:
         pygame.draw.rect(surface, self.color, (self.position[0], self.position[1], GRID_SIZE, GRID_SIZE))
 
     def move(self):
-        if self.collision():
-            return True
+        self.collision()
         if self.tick < 3:  # Movement every 3 ticks
             self.tick += 1
             return
         self.tick = 0
         pos = self.position
         x, y = self.direction
-        self.position = (((pos[0] + (x * GRID_SIZE)) % SCREEN_WIDTH), (pos[1] + (y * GRID_SIZE)) % SCREEN_HEIGHT)
+        if pos[0] > SCREEN_WIDTH or pos[0] < 0 or pos[1] > SCREEN_WIDTH or pos[1] < 0:
+            self.kill = True
+        self.position = ((pos[0] + (x * GRID_SIZE)), (pos[1] + (y * GRID_SIZE)))
         self.collision()
 
     def collision(self):
         if SNAKE.get_head_position() == self.position:
             SNAKE.reset()
-            ENEMY.dead = True
-
             return True
         elif self.position in SNAKE.positions:
             index = SNAKE.positions.index(self.position)
             SNAKE.positions = SNAKE.positions[:index]
             SNAKE.length = index
+            self.kill = True
 
 
 class Enemy:
@@ -187,6 +195,7 @@ class Enemy:
         self.randomize_position()
         self.direction = random.choice([UP, DOWN, LEFT, RIGHT])
         self.dead = True
+        self.nom_sound = pygame.mixer.Sound('nom.mp3')
         global SNAKE
 
     def randomize_position(self):
@@ -221,11 +230,33 @@ class Enemy:
         if SNAKE.get_head_position() == self.position:
             self.randomize_position()
             SNAKE.experience(3)
+            self.nom_sound.play()
             self.dead = True
         elif self.position in SNAKE.positions:
             index = SNAKE.positions.index(self.position)
             SNAKE.positions = SNAKE.positions[:index]
             SNAKE.length = index
+
+
+class Lever:
+    def __init__(self):
+        self.position = (0, 0)
+        self.color = (255, 255, 255)
+        self.randomize_position()
+        self.flicks = 0
+        global SNAKE
+
+    def randomize_position(self):
+        self.position = (random.randint(0, GRID_WIDTH-1)*GRID_SIZE, random.randint(0, GRID_HEIGHT-1)*GRID_SIZE)
+
+    def collision(self):
+        if SNAKE.get_head_position() == self.position:
+            self.flicks += 1
+            if self.flicks < 5:
+                self.randomize_position()
+
+    def draw(self, surface):
+        pygame.draw.rect(surface, self.color, (self.position[0], self.position[1], GRID_SIZE, GRID_SIZE))
 
 
 def draw_grid(surface):
@@ -244,6 +275,7 @@ def draw_grid(surface):
 def main():
     pygame.init()
     pygame.font.init()
+    pygame.mixer.init()
     clock = pygame.time.Clock()
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), 0, 32)
 
@@ -255,14 +287,24 @@ def main():
     global ENEMY
     ENEMY = Enemy()
     fireballs = []
-    fireballs += spawn(6)
+    boss_levels = [0]
+    boss_active = False
+    boss_cooldown = 0
+    fireball_cooldown = 15
+
     font = pygame.font.Font(None, font_size)
+    boss_start = pygame.mixer.Sound('RageActivate.wav')
+    boss_end = pygame.mixer.Sound('RageEnd.wav')
+    boss_end.set_volume(0.5), boss_start.set_volume(0.5)
+    nom_sound = pygame.mixer.Sound('nom.mp3')
+
+    tick_rate = 10
 
     while True:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
-            elif event.type == pygame.KEYDOWN and not movement_disabled:  # Check if movement is allowed
+            elif event.type == pygame.KEYDOWN and not movement_disabled:
                 if event.key == pygame.K_UP:
                     SNAKE.turn(UP)
                 elif event.key == pygame.K_DOWN:
@@ -284,13 +326,48 @@ def main():
             SNAKE.move()
             food.randomize_position()
             SNAKE.experience(1)
+            nom_sound.play()
+
             if SNAKE.length >= 5:
                 ENEMY.dead = False
         ENEMY.collision()
+
         for fireball in fireballs:
-            if fireball.move():  # If collision is True
+            fireball.move()
+            if fireball.kill:
                 fireballs.remove(fireball)
+
+        if SNAKE.level == 0 and SNAKE.xp == 0:  # Reset board upon death
+            fireballs = []
+            boss_levels = [0]
+            tick_rate = 10
+            ENEMY.dead = True
+            if boss_active:
+                boss_end.play()
+                boss_active = False
+                while pygame.mixer.get_busy():
+                    pygame.time.wait(30)
+
         draw_grid(surface)
+
+        if boss_active:
+            lever.collision()
+            fireball_cooldown -= 1
+            if fireball_cooldown <= 0:
+                fireball_cooldown = 15
+                fireballs += spawn("Fireball", 1)
+
+            if lever.flicks >= 1:
+                boss_end.play()
+                tick_rate = 10
+                boss_active = False
+                SNAKE.experience(max((2 * (SNAKE.length - 2)), 2))
+            else:
+                lever.draw(surface)
+
+        elif boss_cooldown > 0:
+            boss_cooldown -= 1
+
         SNAKE.draw(surface)
         for fireball in fireballs:
             fireball.draw(surface)
@@ -298,23 +375,39 @@ def main():
             ENEMY.draw(surface)
         food.draw(surface)
         screen.blit(surface, (0, 0))
-        clock.tick(10)
+        display_ui(font, screen)
 
-        # XP and Level counter display
-        xp_text = font.render(f"{SNAKE.xp} / {SNAKE.needed_xp}", True, text_color)
-        xp_outline_text = font.render(f"{SNAKE.xp} / {SNAKE.needed_xp}", True, outline_color)
+        # Activate boss battle
+        if SNAKE.level % 3 == 0 and SNAKE.level not in boss_levels:
+            boss_levels.append(SNAKE.level)
+            if boss_cooldown <= 0:
+                boss_cooldown = 100
+                boss_start.play()
+                tick_rate = 15
+                fireballs += spawn("Fireball", 10)
+                if not boss_active:
+                    lever = Lever()
+                    boss_active = True
 
-        level_text = font.render(f"Level: {SNAKE.level}", True, text_color)
-        level_outline_text = font.render(f"Level: {SNAKE.level}", True, outline_color)
+        clock.tick(tick_rate)
 
-        # Blit outline text with offsets to create the outline effect
-        for dx, dy in [(0, -outline_width), (0, outline_width), (-outline_width, 0), (outline_width, 0)]:
-            screen.blit(xp_outline_text, (text_x + dx, text_y + dy))
-            screen.blit(level_outline_text, (text_x + dx, text_y + xp_text.get_height() + 5 + dy))
 
-        screen.blit(xp_text, (text_x, text_y))
-        screen.blit(level_text, (text_x, text_y + xp_text.get_height() + 5))
-        pygame.display.update()
+def display_ui(font, screen):
+    # XP and Level counter display
+    xp_text = font.render(f"{SNAKE.xp} / {SNAKE.needed_xp}", True, text_color)
+    xp_outline_text = font.render(f"{SNAKE.xp} / {SNAKE.needed_xp}", True, outline_color)
+
+    level_text = font.render(f"Level: {SNAKE.level}", True, text_color)
+    level_outline_text = font.render(f"Level: {SNAKE.level}", True, outline_color)
+
+    # Blit outline text with offsets to create the outline effect
+    for dx, dy in [(0, -outline_width), (0, outline_width), (-outline_width, 0), (outline_width, 0)]:
+        screen.blit(xp_outline_text, (text_x + dx, text_y + dy))
+        screen.blit(level_outline_text, (text_x + dx, text_y + xp_text.get_height() + 5 + dy))
+
+    screen.blit(xp_text, (text_x, text_y))
+    screen.blit(level_text, (text_x, text_y + xp_text.get_height() + 5))
+    pygame.display.update()
 
 
 if __name__ == "__main__":
