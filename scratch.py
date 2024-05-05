@@ -1,5 +1,6 @@
 import pygame
 import random
+from shop import create_shop_window
 
 SCREEN_WIDTH = 920
 SCREEN_HEIGHT = 920
@@ -291,6 +292,7 @@ def main():
     boss_active = False
     boss_cooldown = 0
     fireball_cooldown = 15
+    shop_open = False
 
     font = pygame.font.Font(None, font_size)
     boss_start = pygame.mixer.Sound('RageActivate.wav')
@@ -299,21 +301,37 @@ def main():
     nom_sound = pygame.mixer.Sound('nom.mp3')
 
     tick_rate = 10
+    selected_item = 0
 
     while True:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
-            elif event.type == pygame.KEYDOWN and not movement_disabled:
-                if event.key == pygame.K_UP:
-                    SNAKE.turn(UP)
-                elif event.key == pygame.K_DOWN:
-                    SNAKE.turn(DOWN)
-                elif event.key == pygame.K_LEFT:
-                    SNAKE.turn(LEFT)
-                elif event.key == pygame.K_RIGHT:
-                    SNAKE.turn(RIGHT)
-                movement_disabled = True  # Disable movement
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_k:
+                    shop_open = not shop_open
+                elif shop_open:  # Check if the shop is open
+                    if event.key == pygame.K_UP:
+                        selected_item = (selected_item - 1) % len(shop_items)
+                    elif event.key == pygame.K_DOWN:
+                        selected_item = (selected_item + 1) % len(shop_items)
+                    elif event.key == pygame.K_SPACE:
+                        print("Item selected:", shop_items[selected_item])
+                elif not movement_disabled:  # Check if movement is enabled
+                    actions = {
+                        pygame.K_UP: UP,
+                        pygame.K_DOWN: DOWN,
+                        pygame.K_LEFT: LEFT,
+                        pygame.K_RIGHT: RIGHT
+                    }
+                    direction = actions.get(event.key)
+                    if direction:
+                        SNAKE.turn(direction)
+                        movement_disabled = True  # Disable movement
+
+        if shop_open:
+            display_ui(font, screen, shop_open, selected_item)
+            continue
 
         SNAKE.move()
         if not ENEMY.dead and random.random() < 0.4:
@@ -357,7 +375,7 @@ def main():
                 fireball_cooldown = 15
                 fireballs += spawn("Fireball", 1)
 
-            if lever.flicks >= 1:
+            if lever.flicks >= 3:
                 boss_end.play()
                 tick_rate = 10
                 boss_active = False
@@ -375,10 +393,10 @@ def main():
             ENEMY.draw(surface)
         food.draw(surface)
         screen.blit(surface, (0, 0))
-        display_ui(font, screen)
+        display_ui(font, screen, shop_open, selected_item)
 
         # Activate boss battle
-        if SNAKE.level % 3 == 0 and SNAKE.level not in boss_levels:
+        if SNAKE.level % 1 == 0 and SNAKE.level not in boss_levels:
             boss_levels.append(SNAKE.level)
             if boss_cooldown <= 0:
                 boss_cooldown = 100
@@ -388,11 +406,11 @@ def main():
                 if not boss_active:
                     lever = Lever()
                     boss_active = True
+        if not shop_open:
+            clock.tick(tick_rate)
 
-        clock.tick(tick_rate)
 
-
-def display_ui(font, screen):
+def display_ui(font, screen, shop_open, selected_item):
     # XP and Level counter display
     xp_text = font.render(f"{SNAKE.xp} / {SNAKE.needed_xp}", True, text_color)
     xp_outline_text = font.render(f"{SNAKE.xp} / {SNAKE.needed_xp}", True, outline_color)
@@ -407,7 +425,14 @@ def display_ui(font, screen):
 
     screen.blit(xp_text, (text_x, text_y))
     screen.blit(level_text, (text_x, text_y + xp_text.get_height() + 5))
-    pygame.display.update()
+    if shop_open:
+        shop_surface = create_shop_window(shop_items, selected_item)
+        screen.blit(shop_surface, (200, 150))
+
+        pygame.display.update()
+        return True
+    else:
+        pygame.display.update()
 
 
 if __name__ == "__main__":
